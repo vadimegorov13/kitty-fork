@@ -2144,6 +2144,7 @@ layer_shell_config_to_python(const GLFWLayerShellConfig *c) {
     A(requested_right_margin, fl);
     A(requested_exclusive_zone, fl);
     A(hide_on_focus_loss, b)
+    A(floating, b)
     A(override_exclusive_zone, b);
 #undef A
 #undef fl
@@ -2178,6 +2179,7 @@ layer_shell_config_from_python(PyObject *p, GLFWLayerShellConfig *ans) {
     A(requested_exclusive_zone, PyLong_Check, PyLong_AsLong);
     A(override_exclusive_zone, PyBool_Check, PyLong_AsLong);
     A(hide_on_focus_loss, PyBool_Check, PyLong_AsLong);
+    A(floating, PyBool_Check, PyLong_AsLong);
 #undef A
 #define A(attr)                                                             \
     {                                                                       \
@@ -3881,6 +3883,16 @@ layer_shell_config_for_os_window(PyObject *self UNUSED, PyObject *wid) {
 }
 
 static PyObject *
+start_os_window_move(PyObject *self UNUSED, PyObject *wid) {
+    if (!PyLong_Check(wid)) { PyErr_SetString(PyExc_TypeError, "os_window_id must be an int"); return NULL; }
+#ifdef __APPLE__
+    OSWindow *w = os_window_for_id(PyLong_AsUnsignedLongLong(wid));
+    if (w && w->handle && glfwCocoaStartWindowMove(w->handle)) Py_RETURN_TRUE;
+#endif
+    Py_RETURN_FALSE;
+}
+
+static PyObject *
 set_layer_shell_config(PyObject *self UNUSED, PyObject *args) {
     unsigned long long wid;
     PyObject *pylsc;
@@ -4122,6 +4134,7 @@ static PyMethodDef module_methods[] = {
     {"toggle_os_window_visibility", (PyCFunction)(void (*)(void))(toggle_os_window_visibility), METH_VARARGS | METH_KEYWORDS, NULL},
     METHODB(layer_shell_config_for_os_window, METH_O),
     METHODB(set_layer_shell_config, METH_VARARGS),
+    METHODB(start_os_window_move, METH_O),
     METHODB(grab_keyboard, METH_O),
     METHODB(pointer_name_to_css_name, METH_O),
     {"create_os_window", (PyCFunction)(void (*)(void))(create_os_window), METH_VARARGS | METH_KEYWORDS, NULL},

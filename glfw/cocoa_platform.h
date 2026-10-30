@@ -155,6 +155,7 @@ typedef struct _GLFWwindowNS {
     float xscale, yscale;
     int blur_radius;
     bool live_resize_in_progress;
+    struct { bool active; double mouse_x, mouse_y, origin_x, origin_y; } panel_move;
     struct {
         struct {
             CGFloat red, green, blue, alpha;

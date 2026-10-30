@@ -140,6 +140,7 @@ class LayerShellConfig(NamedTuple):
     requested_exclusive_zone: int = -1
     override_exclusive_zone: bool = False
     hide_on_focus_loss: bool = False
+    floating: bool = False
 
 
 def mod_to_names(mods: int, has_kitty_mod: bool = False, kitty_mod: int = 0) -> Iterator[str]:

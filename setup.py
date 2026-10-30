@@ -2071,8 +2071,9 @@ def macos_info_plist(for_quake: str = '') -> bytes:
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac=True,
     )
     if for_quake:
-        # exclude from dock and menubar
-        pl['LSBackgroundOnly'] = True
+        # exclude from dock and menubar, not LSBackgroundOnly as such apps
+        # are not allowed to show notifications
+        pl['LSUIElement'] = True
     return plistlib.dumps(pl)
 
 

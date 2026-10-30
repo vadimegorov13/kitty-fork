@@ -904,6 +904,11 @@ static void flush_focus_loss_text(_GLFWwindow *window);
 
 // Content view class for the GLFW window {{{
 
+static bool
+is_floating_panel(const _GLFWwindow *window) {
+    return window->ns.layer_shell.is_active && window->ns.layer_shell.config.floating && !window->ns.layer_shell.config.was_toggled_to_fullscreen;
+}
+
 @interface GLFWContentView : NSView <NSTextInputClient> {
     _GLFWwindow *window;
     NSTrackingArea *trackingArea;
@@ -1046,15 +1051,27 @@ static void flush_focus_loss_text(_GLFWwindow *window);
 
 - (void)mouseDown:(NSEvent *)event {
     if (!window) return;
+    const NSEventModifierFlags move_mods = NSEventModifierFlagControl | NSEventModifierFlagCommand;
+    if (is_floating_panel(window) && ([event modifierFlags] & move_mods) == move_mods) {
+        [window->ns.object performWindowDragWithEvent:event];
+        return;
+    }
     _glfwInputMouseClick(window, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, translateFlags([event modifierFlags]));
 }
 
 - (void)mouseDragged:(NSEvent *)event {
+    if (window && window->ns.panel_move.active) {
+        NSPoint mouse = [NSEvent mouseLocation];
+        [window->ns.object setFrameOrigin:NSMakePoint(
+            window->ns.panel_move.origin_x + mouse.x - window->ns.panel_move.mouse_x, window->ns.panel_move.origin_y + mouse.y - window->ns.panel_move.mouse_y)];
+        return;
+    }
     [self mouseMoved:event];
 }
 
 - (void)mouseUp:(NSEvent *)event {
     if (!window) return;
+    window->ns.panel_move.active = false;
     _glfwInputMouseClick(window, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, translateFlags([event modifierFlags]));
 }
 
@@ -2738,6 +2755,8 @@ _glfwPlatformCreateWindow(
 void
 _glfwPlatformDestroyWindow(_GLFWwindow *window) {
     GLFWWindow *w = window->ns.object;
+    // The window is resized to zero below, that must not replace the saved frame
+    if (window->ns.layer_shell.is_active && window->ns.layer_shell.config.floating) [w setFrameAutosaveName:@""];
     if (_glfw.ns.disabledCursorWindow == window) _glfw.ns.disabledCursorWindow = NULL;
     free_drop_data(window);
     if (window->ns.notch_cover_window) {
@@ -2914,6 +2933,12 @@ move_window_to_screen(_GLFWwindow *window, NSScreen *target) {
     NSRect windowFrame = [window->ns.object frame];
     CGFloat newX = NSMidX(screenFrame) - (windowFrame.size.width / 2.0);
     CGFloat newY = NSMidY(screenFrame) - (windowFrame.size.height / 2.0);
+    if (is_floating_panel(window)) {
+        // Keep the position the user chose, relative to the top left of the screen
+        NSRect current = screen_for_window_center(window).frame;
+        newX = NSMinX(windowFrame) - NSMinX(current) + NSMinX(target.frame);
+        newY = NSMinY(windowFrame) - NSMaxY(current) + NSMaxY(target.frame);
+    }
     NSRect newWindowFrame = NSMakeRect(newX, newY, windowFrame.size.width, windowFrame.size.height);
     [window->ns.object setFrame:newWindowFrame display:NO animate:NO];
     if (window->ns.layer_shell.is_active) _glfwPlatformSetLayerShellConfig(window, NULL);
@@ -2922,6 +2947,24 @@ move_window_to_screen(_GLFWwindow *window, NSScreen *target) {
 const GLFWLayerShellConfig *
 _glfwPlatformGetLayerShellConfig(_GLFWwindow *window) {
     return &window->ns.layer_shell.config;
+}
+
+static void
+place_floating_panel(_GLFWwindow *window, NSRect default_frame) {
+    NSWindow *nw = window->ns.object;
+    NSString *name = @"kitty-floating-panel";
+    if (![nw.frameAutosaveName length]) {
+        [nw setFrame:default_frame display:NO];
+        [nw setFrameUsingName:name];  // has no effect if no frame was saved yet
+        [nw setFrameAutosaveName:name];
+    }
+    // The saved frame might be from a screen that is no longer connected
+    NSRect screen = screen_for_window_center(window).frame, frame = nw.frame;
+    frame.size.width = MIN(frame.size.width, screen.size.width);
+    frame.size.height = MIN(frame.size.height, screen.size.height);
+    frame.origin.x = MAX(NSMinX(screen), MIN(frame.origin.x, NSMaxX(screen) - frame.size.width));
+    frame.origin.y = MAX(NSMinY(screen), MIN(frame.origin.y, NSMaxY(screen) - frame.size.height));
+    [nw setFrame:frame display:YES];
 }
 
 static NSScreen *
@@ -2939,8 +2982,9 @@ bool
 _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig *value) {
 #define config window->ns.layer_shell.config
 #define nswindow window->ns.object
-    window->resizable = false;
     if (value) config = *value;
+    const bool floating = is_floating_panel(window);
+    window->resizable = floating;
     const bool is_transparent = _glfwPlatformFramebufferTransparent(window);
     int background_blur = config.related.background_blur;
     if (!is_transparent || config.related.background_opacity >= 1.f) { background_blur = 0; }
@@ -2949,7 +2993,7 @@ _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig
     window->ns.titlebar_hidden = true;
     window->decorated = false;
     [nswindow setTitlebarAppearsTransparent:false];
-    [nswindow setHasShadow:false];
+    [nswindow setHasShadow:floating];
     [nswindow setTitleVisibility:NSWindowTitleHidden];
     NSColorSpace *cs = nil;
     switch (config.related.color_space) {
@@ -2961,7 +3005,7 @@ _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig
     [[nswindow standardWindowButton:NSWindowCloseButton] setHidden:true];
     [[nswindow standardWindowButton:NSWindowMiniaturizeButton] setHidden:true];
     [[nswindow standardWindowButton:NSWindowZoomButton] setHidden:true];
-    [nswindow setStyleMask:NSWindowStyleMaskBorderless];
+    [nswindow setStyleMask:floating ? NSWindowStyleMaskBorderless | NSWindowStyleMaskResizable : NSWindowStyleMaskBorderless];
     // HACK: Changing the style mask can cause the first responder to be cleared
     [nswindow makeFirstResponder:window->ns.view];
     NSScreen *screen = screen_for_window_center(window);
@@ -3049,7 +3093,12 @@ _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig
     apply_ns_window_layer(window, config.related.ns_window_layer);
     [nswindow
         setCollectionBehavior:(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle)];
-    [nswindow setFrame:NSMakeRect(x, y, width, height) display:YES];
+    if (floating) place_floating_panel(window, NSMakeRect(x, y, width, height));
+    else {
+        // A temporary toggle to fullscreen must not replace the saved frame
+        if (config.floating) [nswindow setFrameAutosaveName:@""];
+        [nswindow setFrame:NSMakeRect(x, y, width, height) display:YES];
+    }
     return true;
 #undef config
 #undef nswindow
@@ -4225,6 +4274,20 @@ apply_titlebar_color_settings(_GLFWwindow *window) {
 #undef tc
 }
 
+
+GLFWAPI bool
+glfwCocoaStartWindowMove(GLFWwindow *w) {
+    _GLFWwindow *window = (_GLFWwindow *)w;
+    NSEvent *event = [NSApp currentEvent];
+    if (!is_floating_panel(window) || event.type != NSEventTypeLeftMouseDown) return false;
+    window->ns.panel_move.active = true;
+    const NSPoint mouse = [NSEvent mouseLocation], origin = [window->ns.object frame].origin;
+    window->ns.panel_move.mouse_x = mouse.x;
+    window->ns.panel_move.mouse_y = mouse.y;
+    window->ns.panel_move.origin_x = origin.x;
+    window->ns.panel_move.origin_y = origin.y;
+    return true;
+}
 
 GLFWAPI void
 glfwCocoaSetWindowLevel(GLFWwindow *w, const char *level_spec) {

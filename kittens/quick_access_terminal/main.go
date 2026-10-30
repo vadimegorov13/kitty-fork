@@ -86,6 +86,9 @@ func main(cmd *cli.Command, opts *Options, args []string) (rc int, err error) {
 	if conf.Hide_on_focus_loss {
 		argv = append(argv, `--hide-on-focus-loss`)
 	}
+	if conf.Floating {
+		argv = append(argv, `--floating`)
+	}
 	if opts.DebugRendering {
 		argv = append(argv, `--debug-rendering`)
 	}

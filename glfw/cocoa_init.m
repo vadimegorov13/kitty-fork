@@ -242,7 +242,8 @@ static NSDictionary<NSString *, NSNumber *> *global_shortcuts = nil;
 
 - (void)applicationDidActivate:(NSNotification *)notification {
     NSRunningApplication *app = notification.userInfo[NSWorkspaceApplicationKey];
-    if (app && app.processIdentifier != getpid()) {
+    // The launcher exits immediately, so focus must not be returned to it
+    if (app && app.processIdentifier != getpid() && ![app.bundleIdentifier isEqualToString:@"net.kovidgoyal.kitty-quick-access-launcher"]) {
         _glfw.ns.previous_front_most_application = app.processIdentifier;
         debug_rendering("Front most application changed to: %s pid: %d\n", app.bundleIdentifier.UTF8String, app.processIdentifier)
     }

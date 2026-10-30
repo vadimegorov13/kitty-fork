@@ -1138,7 +1138,7 @@ typedef struct GLFWLayerShellConfig {
     unsigned x_size_in_cells, x_size_in_pixels;
     unsigned y_size_in_cells, y_size_in_pixels;
     int requested_top_margin, requested_left_margin, requested_bottom_margin, requested_right_margin;
-    int requested_exclusive_zone, hide_on_focus_loss;
+    int requested_exclusive_zone, hide_on_focus_loss, floating;
     unsigned override_exclusive_zone;
     void (*size_callback)(
         GLFWwindow *window,
@@ -2618,6 +2618,10 @@ GFW_EXTERN glfwCocoaPreserveDroppedFilePromises_func glfwCocoaPreserveDroppedFil
 typedef void (*glfwCocoaSetWindowLevel_func)(GLFWwindow*, const char*);
 GFW_EXTERN glfwCocoaSetWindowLevel_func glfwCocoaSetWindowLevel_impl;
 #define glfwCocoaSetWindowLevel glfwCocoaSetWindowLevel_impl
+
+typedef bool (*glfwCocoaStartWindowMove_func)(GLFWwindow*);
+GFW_EXTERN glfwCocoaStartWindowMove_func glfwCocoaStartWindowMove_impl;
+#define glfwCocoaStartWindowMove glfwCocoaStartWindowMove_impl
 
 typedef const char* (*glfwGetPrimarySelectionString_func)(GLFWwindow*);
 GFW_EXTERN glfwGetPrimarySelectionString_func glfwGetPrimarySelectionString_impl;

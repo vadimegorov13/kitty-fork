@@ -31,6 +31,7 @@ from .fast_data_types import (
     get_boss,
     get_options,
     os_window_is_invisible,
+    toggle_os_window_visibility,
 )
 from .types import run_once
 from .typing_compat import WindowType
@@ -899,6 +900,8 @@ class Channel:
             log_error(f'Focusing window: {channel_id} with activation_token: {activation_token}')
         boss = get_boss()
         if w := self.window_for_id(channel_id):
+            # Windows such as the quick access terminal can be hidden
+            toggle_os_window_visibility(w.os_window_id, visible=True, move_to_active_screen=True)
             boss.set_active_window(w, switch_os_window_if_needed=True, activation_token=activation_token)
 
 

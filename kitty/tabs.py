@@ -54,6 +54,7 @@ from .fast_data_types import (
     set_active_window,
     set_redirect_keys_to_overlay,
     set_tab_being_dragged,
+    start_os_window_move,
     set_window_being_dragged,
     start_drag_with_data,
     swap_tabs,
@@ -2086,6 +2087,8 @@ class TabManager:  # {{{
             return
         tab = self.tab_for_id(tab_id_at_pointer)
         if tab is None:
+            if button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_PRESS and start_os_window_move(self.os_window_id):
+                return
             if is_left_release:
                 set_tab_being_dragged()  # clear potential drag from a press on a tab
             if self.recent_tab_bar_mouse_events.click_count(GLFW_MOUSE_BUTTON_LEFT) == 2:

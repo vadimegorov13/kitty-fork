@@ -74,6 +74,18 @@ will force :opt:`focus_policy` to :code:`on-demand`.
 """,
 )
 
+opt(
+    'floating',
+    'no',
+    option_type='to_bool',
+    long_text="""
+Allow moving and resizing the window with the mouse, remembering its size and position. Move it by
+dragging an empty part of the tab bar or by dragging with :kbd:`ctrl+cmd` held down anywhere in the
+window. Resize it by dragging its edges. The :opt:`lines`, :opt:`columns`, :opt:`edge` and margin
+options then apply only until it has been moved or resized for the first time. macOS only.
+""",
+)
+
 opt('grab_keyboard', 'no', option_type='to_bool', long_text=grab_keyboard_docs)
 
 opt('margin_left', '0', option_type='int', long_text=help_of('margin_left'))

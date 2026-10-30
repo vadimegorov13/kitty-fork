@@ -720,6 +720,14 @@ Note that different Wayland compositors behave very differently with :code:`excl
 On macOS, :code:`exclusive` and :code:`on-demand` are currently the same.
 
 
+--floating
+type=bool-set
+Allow moving and resizing the panel with the mouse, remembering its size and position. Move it by
+dragging an empty part of the tab bar or by dragging with :kbd:`ctrl+cmd` held down anywhere in the
+window. Resize it by dragging its edges. The panel options that control its size and position
+then apply only until it has been moved or resized for the first time. macOS only.
+
+
 --hide-on-focus-loss
 type=bool-set
 Automatically hide the panel window when it loses focus. Using this option will force :option:`--focus-policy`
