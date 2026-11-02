@@ -2992,7 +2992,9 @@ _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig
     _glfwPlatformSetWindowBlur(window, background_blur);
     window->ns.titlebar_hidden = true;
     window->decorated = false;
-    [nswindow setTitlebarAppearsTransparent:false];
+    // A floating panel is a titled window with an invisible titlebar so that macOS gives it
+    // the same rounded corners, shadow and blur shape as every other window
+    [nswindow setTitlebarAppearsTransparent:floating];
     [nswindow setHasShadow:floating];
     [nswindow setTitleVisibility:NSWindowTitleHidden];
     NSColorSpace *cs = nil;
@@ -3002,10 +3004,11 @@ _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig
         case DEFAULT_COLORSPACE: cs = nil; break; // using deviceRGBColorSpace causes a hang when transitioning to fullscreen
     }
     [nswindow setColorSpace:cs];
+    [nswindow setStyleMask:floating ? NSWindowStyleMaskTitled | NSWindowStyleMaskFullSizeContentView | NSWindowStyleMaskResizable : NSWindowStyleMaskBorderless];
+    // Hide the buttons after setting the style mask as a titled style mask creates them
     [[nswindow standardWindowButton:NSWindowCloseButton] setHidden:true];
     [[nswindow standardWindowButton:NSWindowMiniaturizeButton] setHidden:true];
     [[nswindow standardWindowButton:NSWindowZoomButton] setHidden:true];
-    [nswindow setStyleMask:floating ? NSWindowStyleMaskBorderless | NSWindowStyleMaskResizable : NSWindowStyleMaskBorderless];
     // HACK: Changing the style mask can cause the first responder to be cleared
     [nswindow makeFirstResponder:window->ns.view];
     NSScreen *screen = screen_for_window_center(window);
