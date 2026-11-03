@@ -2623,6 +2623,10 @@ typedef bool (*glfwCocoaStartWindowMove_func)(GLFWwindow*);
 GFW_EXTERN glfwCocoaStartWindowMove_func glfwCocoaStartWindowMove_impl;
 #define glfwCocoaStartWindowMove glfwCocoaStartWindowMove_impl
 
+typedef int (*glfwCocoaPlaceHideButton_func)(GLFWwindow*, int);
+GFW_EXTERN glfwCocoaPlaceHideButton_func glfwCocoaPlaceHideButton_impl;
+#define glfwCocoaPlaceHideButton glfwCocoaPlaceHideButton_impl
+
 typedef const char* (*glfwGetPrimarySelectionString_func)(GLFWwindow*);
 GFW_EXTERN glfwGetPrimarySelectionString_func glfwGetPrimarySelectionString_impl;
 #define glfwGetPrimarySelectionString glfwGetPrimarySelectionString_impl

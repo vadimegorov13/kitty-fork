@@ -3883,6 +3883,20 @@ layer_shell_config_for_os_window(PyObject *self UNUSED, PyObject *wid) {
 }
 
 static PyObject *
+place_os_window_hide_button(PyObject *self UNUSED, PyObject *args) {
+    unsigned long long wid; int center_y;
+    if (!PyArg_ParseTuple(args, "Ki", &wid, &center_y)) return NULL;
+    int reserved = 0;
+#ifdef __APPLE__
+    OSWindow *w = os_window_for_id(wid);
+    if (w && w->handle) reserved = glfwCocoaPlaceHideButton(w->handle, center_y);
+#else
+    (void)wid; (void)center_y;
+#endif
+    return PyLong_FromLong(reserved);
+}
+
+static PyObject *
 start_os_window_move(PyObject *self UNUSED, PyObject *wid) {
     if (!PyLong_Check(wid)) { PyErr_SetString(PyExc_TypeError, "os_window_id must be an int"); return NULL; }
 #ifdef __APPLE__
@@ -4135,6 +4149,7 @@ static PyMethodDef module_methods[] = {
     METHODB(layer_shell_config_for_os_window, METH_O),
     METHODB(set_layer_shell_config, METH_VARARGS),
     METHODB(start_os_window_move, METH_O),
+    METHODB(place_os_window_hide_button, METH_VARARGS),
     METHODB(grab_keyboard, METH_O),
     METHODB(pointer_name_to_css_name, METH_O),
     {"create_os_window", (PyCFunction)(void (*)(void))(create_os_window), METH_VARARGS | METH_KEYWORDS, NULL},

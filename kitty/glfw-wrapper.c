@@ -524,6 +524,9 @@ load_glfw(const char* path) {
     *(void **) (&glfwCocoaStartWindowMove_impl) = dlsym(handle, "glfwCocoaStartWindowMove");
     if (glfwCocoaStartWindowMove_impl == NULL) dlerror(); // clear error indicator
 
+    *(void **) (&glfwCocoaPlaceHideButton_impl) = dlsym(handle, "glfwCocoaPlaceHideButton");
+    if (glfwCocoaPlaceHideButton_impl == NULL) dlerror(); // clear error indicator
+
     *(void **) (&glfwGetPrimarySelectionString_impl) = dlsym(handle, "glfwGetPrimarySelectionString");
     if (glfwGetPrimarySelectionString_impl == NULL) dlerror(); // clear error indicator
 

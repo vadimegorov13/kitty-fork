@@ -615,6 +615,7 @@ static const NSRange kEmptyRange = {NSNotFound, 0};
 
 - (instancetype)initWithGlfwWindow:(_GLFWwindow *)initWindow;
 - (void)request_delayed_cursor_update:(id)sender;
+- (void)hidePanel:(id)sender;
 
 @end
 
@@ -781,6 +782,12 @@ static void flush_focus_loss_text(_GLFWwindow *window);
         // is running for the new monitor
         requestRenderFrame(window, window->ns.renderFrameCallback);
     }
+}
+
+- (void)hidePanel:(id)sender {
+    (void)sender;
+    // The same as toggling the panel off, kitty is told of the change by the occlusion callback
+    if (window) _glfwPlatformHideWindow(window);
 }
 
 - (void)request_delayed_cursor_update:(id)sender {
@@ -2770,6 +2777,11 @@ _glfwPlatformDestroyWindow(_GLFWwindow *window) {
 
     [w orderOut:nil];
     update_mission_control_watch();
+    if (window->ns.hide_button) {
+        [window->ns.hide_button removeFromSuperview];
+        [window->ns.hide_button release];
+        window->ns.hide_button = nil;
+    }
 
     if (window->monitor) releaseMonitor(window);
 
@@ -2982,11 +2994,15 @@ mission_control_is_active(_GLFWwindow *window) {
 }
 
 static void
-set_hidden_for_mission_control(_GLFWwindow *window, bool hidden) {
+set_hidden_for_mission_control(_GLFWwindow *window, bool hidden, bool animate) {
     if (window->ns.hidden_for_mission_control == hidden) return;
     window->ns.hidden_for_mission_control = hidden;
-    [window->ns.object setAlphaValue:hidden ? 0 : 1];
     [window->ns.object setIgnoresMouseEvents:hidden];
+    // Fade along with the Mission Control animation rather than popping in and out
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = animate ? (hidden ? 0.2 : 0.3) : 0;
+        [[window->ns.object animator] setAlphaValue:hidden ? 0 : 1];
+    } completionHandler:nil];
 }
 
 static bool
@@ -2999,15 +3015,15 @@ update_mission_control_watch(void) {
     bool needed = false;
     for (_GLFWwindow *w = _glfw.windowListHead; w; w = w->next) {
         if (needs_mission_control_watch(w)) needed = true;
-        else set_hidden_for_mission_control(w, false);
+        else set_hidden_for_mission_control(w, false, false);
     }
     if (needed && !mission_control_timer) {
-        mission_control_timer = [NSTimer timerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *timer UNUSED) {
+        mission_control_timer = [NSTimer timerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer UNUSED) {
             for (_GLFWwindow *w = _glfw.windowListHead; w; w = w->next) {
-                if (needs_mission_control_watch(w)) set_hidden_for_mission_control(w, mission_control_is_active(w));
+                if (needs_mission_control_watch(w)) set_hidden_for_mission_control(w, mission_control_is_active(w), true);
             }
         }];
-        mission_control_timer.tolerance = 0.02;
+        mission_control_timer.tolerance = 0.01;
         [[NSRunLoop mainRunLoop] addTimer:mission_control_timer forMode:NSRunLoopCommonModes];
     } else if (!needed && mission_control_timer) {
         [mission_control_timer invalidate];
@@ -3076,6 +3092,7 @@ _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig
     [[nswindow standardWindowButton:NSWindowCloseButton] setHidden:true];
     [[nswindow standardWindowButton:NSWindowMiniaturizeButton] setHidden:true];
     [[nswindow standardWindowButton:NSWindowZoomButton] setHidden:true];
+    if (window->ns.hide_button && !floating) [window->ns.hide_button setHidden:YES];
     // HACK: Changing the style mask can cause the first responder to be cleared
     [nswindow makeFirstResponder:window->ns.view];
     NSScreen *screen = screen_for_window_center(window);
@@ -4390,6 +4407,48 @@ apply_titlebar_color_settings(_GLFWwindow *window) {
 #undef tc
 }
 
+
+// The button that hides a floating panel sits at the top left, kitty tells us the vertical center
+// of its tab bar so that the button lines up with it and reserves room for the button in the tab bar
+#define HIDE_BUTTON_LEFT 8.
+#define HIDE_BUTTON_GAP 6.
+
+GLFWAPI int
+glfwCocoaPlaceHideButton(GLFWwindow *w, int center_y) {
+    _GLFWwindow *window = (_GLFWwindow *)w;
+    NSWindow *nw = window->ns.object;
+    NSButton *b = window->ns.hide_button;
+    if (!is_floating_panel(window) || center_y < 0) {
+        if (b) [b setHidden:YES];
+        return 0;
+    }
+    NSView *container = [nw standardWindowButton:NSWindowCloseButton].superview;
+    if (!container) return 0;
+    if (!b) {
+        b = [NSWindow standardWindowButton:NSWindowMiniaturizeButton forStyleMask:NSWindowStyleMaskTitled];
+        if (!b) return 0;
+        [b retain];
+        [b setTarget:window->ns.delegate];
+        [b setAction:@selector(hidePanel:)];
+        [b setEnabled:YES];
+        b.toolTip = @"Hide";
+        b.autoresizingMask = NSViewMaxXMargin | NSViewMinYMargin;
+        window->ns.hide_button = b;
+    }
+    if (b.superview != container) {
+        [b removeFromSuperview];
+        [container addSubview:b];
+    }
+    const NSSize size = b.frame.size;
+    const CGFloat center = center_y / (nw.backingScaleFactor > 0 ? nw.backingScaleFactor : 1);
+    // The container is the titlebar at the top of the window, with y increasing upwards. Keep the
+    // button inside it as it is clipped to it.
+    const CGFloat height = container.bounds.size.height;
+    const CGFloat y = round(height - center - size.height / 2);
+    [b setFrameOrigin:NSMakePoint(HIDE_BUTTON_LEFT, MAX(0, MIN(y, height - size.height)))];
+    [b setHidden:NO];
+    return (int)ceil((HIDE_BUTTON_LEFT + size.width + HIDE_BUTTON_GAP) * nw.backingScaleFactor);
+}
 
 GLFWAPI bool
 glfwCocoaStartWindowMove(GLFWwindow *w) {

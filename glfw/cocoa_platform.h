@@ -158,6 +158,7 @@ typedef struct _GLFWwindowNS {
     struct { bool active; double mouse_x, mouse_y, origin_x, origin_y; } panel_move;
     struct { bool hiding; unsigned long long generation; } panel_fade;
     bool hidden_for_mission_control;
+    id hide_button;
     struct {
         struct {
             CGFloat red, green, blue, alpha;

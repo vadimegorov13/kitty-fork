@@ -99,6 +99,7 @@ def generate_wrappers(glfw_header: str) -> None:
     const char* glfwCocoaPreserveDroppedFilePromises(GLFWwindow *window)
     void glfwCocoaSetWindowLevel(GLFWwindow *window, const char *level_spec)
     bool glfwCocoaStartWindowMove(GLFWwindow *window)
+    int glfwCocoaPlaceHideButton(GLFWwindow *window, int center_y)
     const char* glfwGetPrimarySelectionString(GLFWwindow* window, void)
     int glfwGetNativeKeyForName(const char* key_name, int case_sensitive)
     void glfwRequestWaylandFrameEvent(GLFWwindow *handle, unsigned long long id, GLFWwaylandframecallbackfunc callback)

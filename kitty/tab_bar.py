@@ -28,6 +28,7 @@ from .fast_data_types import (
     cell_size_for_window,
     get_boss,
     get_options,
+    place_os_window_hide_button,
     pt_to_px,
     set_tab_bar_render_data,
     split_into_graphemes,
@@ -998,6 +999,7 @@ class TabBar:
     def layout(self) -> None:
         central, tab_bar, vw, vh, cell_width, cell_height = viewport_for_window(self.os_window_id)
         if self.is_vertical:
+            place_os_window_hide_button(self.os_window_id, -1)
             if tab_bar.width < cell_width or tab_bar.height < cell_height:
                 return
         elif tab_bar.width < 2:
@@ -1022,14 +1024,17 @@ class TabBar:
                 tab_bar.left, tab_bar.top + top_margin, tab_bar.right, tab_bar.top + top_margin + cell_area_height, s.columns, s.lines
             )
         else:
-            available_width = tab_bar.width - 2 * self.margin_width
+            # A floating panel on macOS has a button to hide it at the top left, keep the tabs clear of it
+            reserved = place_os_window_hide_button(
+                self.os_window_id, (tab_bar.top + tab_bar.bottom) // 2 if self.tab_bar_edge == TOP_EDGE else -1)
+            available_width = tab_bar.width - 2 * self.margin_width - reserved
             ncells = max(4, available_width // cell_width)
             s.resize(1, ncells)
             s.reset_mode(DECAWM)
             cell_area_width = ncells * cell_width
-            available_width_for_left_margin = max(0, tab_bar.width - self.margin_width - cell_area_width)
-            extra_width = max(0, tab_bar.width - 2 * self.margin_width - cell_area_width)
-            left_margin = min(self.margin_width + extra_width // 2, available_width_for_left_margin)
+            available_width_for_left_margin = max(0, tab_bar.width - self.margin_width - cell_area_width - reserved)
+            extra_width = max(0, tab_bar.width - 2 * self.margin_width - cell_area_width - reserved)
+            left_margin = reserved + min(self.margin_width + extra_width // 2, available_width_for_left_margin)
             self.window_geometry = g = WindowGeometry(left_margin, tab_bar.top, left_margin + cell_area_width, tab_bar.bottom, s.columns, s.lines)
         self.laid_out_once = True
         self._last_viewport = (central, tab_bar, vw, vh)
