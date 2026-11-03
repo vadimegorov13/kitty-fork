@@ -2752,6 +2752,8 @@ _glfwPlatformCreateWindow(
     return true;
 }
 
+static void update_mission_control_watch(void);
+
 void
 _glfwPlatformDestroyWindow(_GLFWwindow *window) {
     GLFWWindow *w = window->ns.object;
@@ -2767,6 +2769,7 @@ _glfwPlatformDestroyWindow(_GLFWwindow *window) {
     }
 
     [w orderOut:nil];
+    update_mission_control_watch();
 
     if (window->monitor) releaseMonitor(window);
 
@@ -2949,6 +2952,70 @@ _glfwPlatformGetLayerShellConfig(_GLFWwindow *window) {
     return &window->ns.layer_shell.config;
 }
 
+// Mission Control {{{
+// A floating panel is above normal windows so it stays on top of the Mission Control overview,
+// none of the collection behaviors change that and macOS sends no notification for Mission
+// Control. So while a floating panel is visible, poll for the full screen windows the Dock
+// shows over the overview, which needs no permissions, and make the panel transparent meanwhile.
+
+static NSTimer *mission_control_timer = nil;
+
+static bool
+mission_control_is_active(_GLFWwindow *window) {
+    CFArrayRef list = CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenAboveWindow, (CGWindowID)[window->ns.object windowNumber]);
+    if (!list) return false;
+    bool found = false;
+    for (CFIndex i = 0; i < CFArrayGetCount(list) && !found; i++) {
+        NSDictionary *info = (__bridge NSDictionary *)CFArrayGetValueAtIndex(list, i);
+        if (![info[(id)kCGWindowOwnerName] isEqualToString:@"Dock"]) continue;
+        const int layer = [info[(id)kCGWindowLayer] intValue];
+        if (layer < kCGDockWindowLevel - 2 || layer > kCGDockWindowLevel) continue;
+        CGRect bounds;
+        if (!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &bounds)) continue;
+        for (NSScreen *screen in [NSScreen screens]) {
+            if (bounds.size.width >= screen.frame.size.width && bounds.size.height >= screen.frame.size.height) { found = true; break; }
+        }
+    }
+    CFRelease(list);
+    return found;
+}
+
+static void
+set_hidden_for_mission_control(_GLFWwindow *window, bool hidden) {
+    if (window->ns.hidden_for_mission_control == hidden) return;
+    window->ns.hidden_for_mission_control = hidden;
+    [window->ns.object setAlphaValue:hidden ? 0 : 1];
+    [window->ns.object setIgnoresMouseEvents:hidden];
+}
+
+static bool
+needs_mission_control_watch(_GLFWwindow *window) {
+    return is_floating_panel(window) && [window->ns.object isVisible];
+}
+
+static void
+update_mission_control_watch(void) {
+    bool needed = false;
+    for (_GLFWwindow *w = _glfw.windowListHead; w; w = w->next) {
+        if (needs_mission_control_watch(w)) needed = true;
+        else set_hidden_for_mission_control(w, false);
+    }
+    if (needed && !mission_control_timer) {
+        mission_control_timer = [NSTimer timerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *timer UNUSED) {
+            for (_GLFWwindow *w = _glfw.windowListHead; w; w = w->next) {
+                if (needs_mission_control_watch(w)) set_hidden_for_mission_control(w, mission_control_is_active(w));
+            }
+        }];
+        mission_control_timer.tolerance = 0.02;
+        [[NSRunLoop mainRunLoop] addTimer:mission_control_timer forMode:NSRunLoopCommonModes];
+    } else if (!needed && mission_control_timer) {
+        [mission_control_timer invalidate];
+        mission_control_timer = nil;
+    }
+}
+// }}}
+
 static void
 place_floating_panel(_GLFWwindow *window, NSRect default_frame) {
     NSWindow *nw = window->ns.object;
@@ -3096,6 +3163,7 @@ _glfwPlatformSetLayerShellConfig(_GLFWwindow *window, const GLFWLayerShellConfig
     apply_ns_window_layer(window, config.related.ns_window_layer);
     [nswindow
         setCollectionBehavior:(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle)];
+    update_mission_control_watch();
     if (floating) place_floating_panel(window, NSMakeRect(x, y, width, height));
     else {
         // A temporary toggle to fullscreen must not replace the saved frame
@@ -3244,10 +3312,48 @@ _glfwPlatformMaximizeWindow(_GLFWwindow *window) {
     if (![window->ns.object isZoomed]) { [window->ns.object zoom:nil]; }
 }
 
+// Floating panels fade in and out like other macOS windows instead of popping
+static const NSTimeInterval panel_fade_duration = 0.15;
+
+static void
+fade_in_floating_panel(_GLFWwindow *window, bool was_visible) {
+    NSWindow *nw = window->ns.object;
+    window->ns.panel_fade.generation++;
+    window->ns.panel_fade.hiding = false;
+    if (!was_visible) nw.alphaValue = 0;
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = panel_fade_duration;
+        // Stay transparent while Mission Control is showing
+        nw.animator.alphaValue = window->ns.hidden_for_mission_control ? 0 : 1;
+    } completionHandler:nil];
+}
+
+static void
+fade_out_floating_panel(_GLFWwindow *window) {
+    NSWindow *nw = window->ns.object;
+    const unsigned long long generation = ++window->ns.panel_fade.generation;
+    window->ns.panel_fade.hiding = true;
+    const GLFWid window_id = window->id;
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = panel_fade_duration;
+        nw.animator.alphaValue = 0;
+    } completionHandler:^{
+        // The window may have been shown again or destroyed while fading out
+        _GLFWwindow *w = _glfwWindowForId(window_id);
+        if (!w || w->ns.panel_fade.generation != generation) return;
+        w->ns.panel_fade.hiding = false;
+        [w->ns.object orderOut:nil];
+        [w->ns.object setAlphaValue:1];
+        update_mission_control_watch();
+    }];
+}
+
 void
 _glfwPlatformShowWindow(_GLFWwindow *window, bool move_to_active_screen) {
     const bool is_background = window->ns.layer_shell.is_active && window->ns.layer_shell.config.type == GLFW_LAYER_SHELL_BACKGROUND;
     NSWindow *nw = window->ns.object;
+    const bool fade = is_floating_panel(window);
+    const bool was_visible = fade && _glfwPlatformWindowVisible(window);
     if (move_to_active_screen) {
         NSScreen *current_screen = screen_for_window_center(window);
         NSScreen *target_screen = active_screen();
@@ -3287,7 +3393,9 @@ _glfwPlatformShowWindow(_GLFWwindow *window, bool move_to_active_screen) {
             NSArray *spaceArray = @[ @(activeSpace) ];
             CGSAddWindowsToSpaces(cid, (__bridge CFArrayRef)windowArray, (__bridge CFArrayRef)spaceArray);
         }
+        if (fade) fade_in_floating_panel(window, was_visible);
         [nw orderFront:nil];
+        update_mission_control_watch();
         __block __typeof__(nw) weakSelf = nw;
         dispatch_async(dispatch_get_main_queue(), ^{ weakSelf.collectionBehavior = old; });
     }
@@ -3295,7 +3403,11 @@ _glfwPlatformShowWindow(_GLFWwindow *window, bool move_to_active_screen) {
 
 void
 _glfwPlatformHideWindow(_GLFWwindow *window) {
-    [window->ns.object orderOut:nil];
+    if (is_floating_panel(window) && [window->ns.object isVisible]) fade_out_floating_panel(window);
+    else {
+        [window->ns.object orderOut:nil];
+        update_mission_control_watch();
+    }
     pid_t prev_app_pid = _glfw.ns.previous_front_most_application;
     _glfw.ns.previous_front_most_application = 0;
     NSRunningApplication *app;
@@ -3417,7 +3529,8 @@ _glfwPlatformWindowIconified(_GLFWwindow *window) {
 
 int
 _glfwPlatformWindowVisible(_GLFWwindow *window) {
-    return [window->ns.object isVisible];
+    // A floating panel that is fading out already counts as hidden
+    return [window->ns.object isVisible] && !window->ns.panel_fade.hiding;
 }
 
 int
